@@ -13,6 +13,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from processing import load_cube, neutral_gains, parade, render
 from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog
+from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtTest import QTest
 from image_editor_ui import ImageEditorWindow
 
 
@@ -126,6 +128,56 @@ class InterfaceTests(unittest.TestCase):
             finally:
                 ImageEditorWindow._app_dir = staticmethod(old_dir)
                 QInputDialog.getText = old_dialog
+
+    def test_neutral_sample_updates_rgb_sliders_and_clear_sample(self):
+        win = ImageEditorWindow()
+        win.original = Image.new("RGB", (60, 60), (100, 120, 140))
+        win._preview_scale = 1.0
+        win.pick_neutral(30, 30)
+        self.assertEqual(win.control_panel.red_channel_slider.value(), 20)
+        self.assertEqual(win.control_panel.green_channel_slider.value(), 0)
+        self.assertLess(win.control_panel.blue_channel_slider.value(), 0)
+        self.assertNotEqual(win.state["neutral_gains"], [1, 1, 1])
+        win.control_panel.reset_neutral_button.click()
+        self.assertEqual(win.state["neutral_gains"], [1, 1, 1])
+        self.assertEqual(win.control_panel.red_channel_slider.value(), 0)
+        win.close()
+
+    def test_color_reset_includes_saturation_and_sample(self):
+        win = ImageEditorWindow()
+        win.control_panel.red_channel_slider.slider.setValue(30)
+        win.control_panel.saturation_slider.slider.setValue(45)
+        win.state["neutral_gains"] = [1.2, 1.0, 0.8]
+        win.control_panel.reset_rgb_button.click()
+        self.assertEqual(win.state["red"], 0)
+        self.assertEqual(win.state["saturation"], 0)
+        self.assertEqual(win.state["neutral_gains"], [1, 1, 1])
+        self.assertEqual(win.control_panel.saturation_slider.value(), 0)
+        win.close()
+
+    def test_crop_selection_works_with_mouse_drag(self):
+        win = ImageEditorWindow()
+        win.resize(1200, 800)
+        win.original = Image.new("RGB", (400, 300), (90, 120, 140))
+        win.schedule_preview()
+        win.show()
+        self._wait(win)
+        win.begin_crop()
+        canvas = win.image_canvas
+        start = canvas.mapFromScene(QPointF(50, 50))
+        end = canvas.mapFromScene(QPointF(250, 200))
+        QTest.mousePress(canvas.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(canvas.viewport(), end, delay=50)
+        QTest.mouseRelease(canvas.viewport(), Qt.MouseButton.LeftButton, pos=end)
+        self.assertTrue(win.control_panel.crop_apply_button.isEnabled())
+        win.control_panel.crop_ratio_combo.setCurrentText("1:1")
+        win.control_panel.crop_apply_button.click()
+        self.assertIsNotNone(win.state["crop"])
+        self.assertAlmostEqual(win.state["crop"][2] - win.state["crop"][0],
+                               win.state["crop"][3] - win.state["crop"][1])
+        win.control_panel.crop_reset_button.click()
+        self.assertIsNone(win.state["crop"])
+        win.close()
 
     def test_actual_size_uses_original_pixels(self):
         win = ImageEditorWindow()
