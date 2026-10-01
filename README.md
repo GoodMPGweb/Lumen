@@ -15,13 +15,13 @@ To create a Windows executable folder, run `build_windows.bat` on Windows. It cr
 
 The included `.github/workflows/build-windows.yml` builds Lumen using a GitHub-hosted Windows computer. Put the contents of this `Lumen` folder at the root of a dedicated GitHub repository. The build starts after a push to `main`, or you can start it from **Actions → Build Lumen for Windows → Run workflow**. When the build finishes, open its run page and download the **Lumen-Windows** artifact. Extract the downloaded ZIP, keep its files together, and run `Lumen.exe`.
 
-The workflow has been prepared and checked locally, but has not yet run on GitHub. A cloud-built unsigned executable may still be restricted by company device policy.
+The workflow runs the automated checks and builds an unsigned Windows app. Company device policy may restrict an unsigned executable.
 
 ## Controls
 
 - **Light & Tone:** Exposure is −2 to +2 EV. Brightness, Contrast, Highlights and Shadows have −100 to +100 controls.
-- **White Balance & Color:** Pick Neutral Area, then click a neutral gray or white area that retains detail. Adjust Red/Green/Blue individually; Saturation is independent. Clear Sample removes the picker correction.
-- **Crop:** Select a rectangle on the photo; choose Freeform, Original, 1:1, 4:3 or 16:9; click Apply. Reset restores the whole image. A later crop acts on the currently visible crop.
+- **White Balance & Color:** Pick Neutral Area, then click a neutral gray or white area that retains detail. The RGB sliders show the combined correction; Clear Sample removes the sampled correction. Reset clears RGB, sample, and saturation adjustments.
+- **Crop:** Choose Freeform, Original, 1:1, 4:3 or 16:9, click Select Crop, drag a rectangle on the photo, then click Apply. Reset restores the whole image. A later crop acts on the currently visible crop.
 - **LUT:** Load a 3D `.cube` file, adjust intensity, or clear it. A copy goes to the application's local data folder so saved presets survive if the source LUT is moved. 1D LUTs and other `.lut` dialects are not supported.
 - **Presets:** Save, apply and delete named color presets. Presets include the tone controls, saturation, RGB channels, neutral sample correction, `.cube` selection and intensity. Crop and markup stay specific to each photo.
 - **Markup:** Draw with a sized red, white or black pen. Enable Text Markup, enter text and drag it on the photo.
