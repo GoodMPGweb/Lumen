@@ -27,6 +27,15 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Build Windows app
         run: python -m PyInstaller --noconfirm --clean --windowed --name Lumen image_editor.py
+      - name: Check packaged GUI startup
+        run: python tests/smoke_windows.py dist/Lumen/Lumen.exe startup.png
+      - name: Upload startup screenshot for diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumen-startup-check
+          path: startup.png
+          if-no-files-found: ignore
       - name: Upload Windows app
         uses: actions/upload-artifact@v4
         with:
