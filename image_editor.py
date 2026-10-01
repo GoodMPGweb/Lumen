@@ -3,12 +3,38 @@
 from __future__ import annotations
 
 import copy
+import faulthandler
 import hashlib
 import json
 import math
 import shutil
 import sys
+import tempfile
+import time
+import traceback
+from datetime import datetime
 from pathlib import Path
+
+
+# A startup trace helps diagnose a white or unresponsive packaged window.
+# It contains only stage names and Python exceptions, never image contents.
+_STARTUP_LOG = None
+try:
+    _STARTUP_LOG = open(Path(tempfile.gettempdir()) / "Lumen-startup.log",
+                        "w", encoding="utf-8", buffering=1)
+    _STARTUP_LOG.write(f"Lumen startup {datetime.now().isoformat(timespec='seconds')}\n")
+    faulthandler.enable(file=_STARTUP_LOG)
+    faulthandler.dump_traceback_later(20, repeat=True, file=_STARTUP_LOG)
+except OSError:
+    _STARTUP_LOG = None
+
+
+def startup_stage(stage: str) -> None:
+    if _STARTUP_LOG is not None:
+        _STARTUP_LOG.write(f"{time.monotonic():.3f} {stage}\n")
+
+
+startup_stage("Importing image and window libraries")
 
 import numpy as np
 from PIL import Image
@@ -23,6 +49,8 @@ from PyQt6.QtWidgets import (
     QPushButton, QSlider, QComboBox, QLineEdit, QFrame, QScrollArea,
     QSizePolicy, QSpacerItem, QFileDialog, QMessageBox, QInputDialog,
 )
+
+startup_stage("Libraries imported")
 
 
 # ---------------------------------------------------------------------------
@@ -1728,13 +1756,30 @@ class ImageEditorWindow(ImageEditorShell):
 
 
 def main() -> int:
+    def report_exception(exception_type, exception, tb):
+        startup_stage("Uncaught exception")
+        if _STARTUP_LOG is not None:
+            traceback.print_exception(exception_type, exception, tb, file=_STARTUP_LOG)
+        sys.__excepthook__(exception_type, exception, tb)
+
+    sys.excepthook = report_exception
+    startup_stage("Creating Qt application")
     app = QApplication(sys.argv)
     app.setApplicationName("Lumen")
     app.setOrganizationName("Lumen")
     app.setStyle("Fusion")
     app.setStyleSheet(QSS)
+    startup_stage("Building main window")
     window = ImageEditorWindow()
+    startup_stage("Showing main window")
     window.show()
+    def first_event():
+        startup_stage("Qt event loop responding")
+        if _STARTUP_LOG is not None:
+            faulthandler.cancel_dump_traceback_later()
+
+    QTimer.singleShot(0, first_event)
+    startup_stage("Starting Qt event loop")
     return app.exec()
 
 
