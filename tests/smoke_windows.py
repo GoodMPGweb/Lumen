@@ -11,7 +11,7 @@ import time
 from PIL import ImageGrab
 
 
-def windows_for_pid(pid):
+def windows_for_app(pid):
     user32 = ctypes.windll.user32
     handles = []
     callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
@@ -20,7 +20,10 @@ def windows_for_pid(pid):
     def inspect(hwnd, unused):
         process_id = ctypes.c_ulong()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(process_id))
-        if process_id.value == pid and user32.IsWindowVisible(hwnd):
+        title = ctypes.create_unicode_buffer(256)
+        user32.GetWindowTextW(hwnd, title, len(title))
+        # A one-file bundle has a bootloader parent and a GUI child process.
+        if user32.IsWindowVisible(hwnd) and (process_id.value == pid or title.value == "Lumen v2"):
             handles.append(hwnd)
         return True
 
@@ -34,14 +37,16 @@ def main():
     with tempfile.TemporaryDirectory() as app_data:
         environment = dict(os.environ, APPDATA=app_data)
         child = subprocess.Popen([str(executable)], cwd=executable.parent, env=environment)
+        opened_hwnd = None
         try:
             deadline = time.monotonic() + 35
             while time.monotonic() < deadline:
                 if child.poll() is not None:
                     raise RuntimeError(f"Lumen exited during startup with code {child.returncode}")
-                handles = windows_for_pid(child.pid)
+                handles = windows_for_app(child.pid)
                 if handles:
                     hwnd = handles[0]
+                    opened_hwnd = hwnd
                     # Detect a blocked event loop, not just a taskbar button.
                     result = ctypes.c_size_t()
                     responsive = ctypes.windll.user32.SendMessageTimeoutW(
@@ -65,11 +70,16 @@ def main():
                 time.sleep(.25)
             raise RuntimeError("Packaged Lumen did not present a responsive window")
         finally:
-            child.terminate()
+            if opened_hwnd:
+                ctypes.windll.user32.PostMessageW(opened_hwnd, 0x0010, 0, 0)  # WM_CLOSE
             try:
                 child.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                child.kill()
+                child.terminate()
+                try:
+                    child.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    child.kill()
 
 
 if __name__ == "__main__":

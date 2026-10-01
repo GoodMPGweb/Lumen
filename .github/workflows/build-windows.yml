@@ -42,3 +42,20 @@ jobs:
           name: Lumen-Windows
           path: dist/Lumen/
           if-no-files-found: error
+      - name: Build single executable
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name Lumen-OneFile image_editor.py
+      - name: Check single executable startup
+        run: python tests/smoke_windows.py dist/Lumen-OneFile.exe startup-onefile.png
+      - name: Upload single executable startup screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumen-onefile-startup-check
+          path: startup-onefile.png
+          if-no-files-found: ignore
+      - name: Upload single executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumen-OneFile-Windows
+          path: dist/Lumen-OneFile.exe
+          if-no-files-found: error

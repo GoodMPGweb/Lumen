@@ -6,6 +6,8 @@ A permanent dark mode photo editor for Windows. Open JPG and PNG images, edit a 
 
 Open the latest successful [Windows build](https://github.com/GoodMPGweb/Lumen/actions/workflows/build-windows.yml), download the **Lumen-Windows** artifact, and extract the whole ZIP. Run `Lumen.exe` with the other extracted files alongside it. No Python installation is needed on the PC. The app is unsigned, so a company device policy may restrict it.
 
+For a single executable, download the **Lumen-OneFile-Windows** artifact and run `Lumen-OneFile.exe`. It extracts its bundled libraries to a temporary folder each time it opens, so startup can take longer than the folder version. Presets and LUT copies remain in the user's application data folder, separate from either executable.
+
 ## Controls
 
 - **Tonal Adjustments:** Brightness, Exposure (±2 EV), Contrast, Saturation, Highlights, and Shadows. The zero handles share one center line.
