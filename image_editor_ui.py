@@ -63,6 +63,8 @@ QComboBox, QLineEdit {{
 }}
 QComboBox:focus, QLineEdit:focus {{ border-bottom: 2px solid {ACCENT}; }}
 QComboBox::drop-down {{ border: none; width: 22px; }}
+QAbstractItemView {{ background: #FFFFFF; color: #1B1B1B; border: 1px solid #D0D0D0;
+    selection-background-color: {ACCENT}; selection-color: #FFFFFF; outline: 0; }}
 
 QSlider::groove:horizontal {{ height: 4px; background: #C4C4C4; border-radius: 2px; }}
 QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
@@ -137,6 +139,8 @@ class ImageCanvas(QGraphicsView):
         self.mode = mode
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag if mode == "pan"
                          else QGraphicsView.DragMode.NoDrag)
+        self.viewport().setCursor(Qt.CursorShape.CrossCursor if mode in ("pick", "crop")
+                                  else Qt.CursorShape.ArrowCursor)
         if mode != "crop":
             self.selection_item.hide()
 
@@ -269,6 +273,10 @@ class RGBParadeScope(QWidget):
                 p.drawLine(int(col.left()), int(y), int(col.right()), int(y))
             if self.parade_data is not None:
                 p.drawImage(col, self.parade_images[i])
+            # Show the waveform limits so values pinned to either edge are clear.
+            p.setPen(QPen(QColor(255, 255, 255, 210), 1))
+            p.drawLine(int(col.left()), int(col.top()), int(col.right()), int(col.top()))
+            p.drawLine(int(col.left()), int(col.bottom()), int(col.right()), int(col.bottom()))
             p.setPen(color.lighter(130))
             p.setFont(QFont("Segoe UI", 7))
             p.drawText(QRectF(x, bottom + 2, col_w, 12), Qt.AlignmentFlag.AlignCenter, "RGB"[i])
@@ -315,6 +323,7 @@ class LabeledSlider(QWidget):
         row.setSpacing(10)
         self.name_label = QLabel(label)
         self.name_label.setObjectName("channelLabel")
+        self.name_label.setFixedWidth(88)
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setObjectName(slider_name)
         self.slider.setRange(minimum, maximum)
@@ -322,6 +331,7 @@ class LabeledSlider(QWidget):
         self.value_label = QLabel()
         self.value_label.setObjectName("valueLabel")
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.value_label.setFixedWidth(64)
         self.value_label.mouseDoubleClickEvent = lambda e: self.reset()
         row.addWidget(self.name_label)
         row.addWidget(self.slider, 1)
@@ -330,9 +340,18 @@ class LabeledSlider(QWidget):
         self._on_value(default)
 
     def _on_value(self, v):
-        sign = "+" if v > 0 and self.slider.minimum() < 0 else ""
-        self.value_label.setText(self.formatter(v) if self.formatter else f"{sign}{v}{self.suffix}")
+        self.value_label.setText(self._formatted_value(v))
         self.value_changed.emit(v)
+
+    def _formatted_value(self, v):
+        sign = "+" if v > 0 and self.slider.minimum() < 0 else ""
+        return self.formatter(v) if self.formatter else f"{sign}{v}{self.suffix}"
+
+    def set_value_silently(self, value):
+        self.slider.blockSignals(True)
+        self.slider.setValue(value)
+        self.slider.blockSignals(False)
+        self.value_label.setText(self._formatted_value(self.slider.value()))
 
     def value(self):
         return self.slider.value()
@@ -359,6 +378,7 @@ class ControlPanel(QWidget):
     tone_changed = pyqtSignal()
     pick_neutral_requested = pyqtSignal()
     reset_neutral_requested = pyqtSignal()
+    reset_color_requested = pyqtSignal()
     crop_requested = pyqtSignal()
     crop_apply_requested = pyqtSignal()
     crop_reset_requested = pyqtSignal()
@@ -453,6 +473,11 @@ class ControlPanel(QWidget):
 
     def _build_crop_section(self):
         card = SectionCard("Crop")
+        self.crop_help_label = QLabel(
+            "Choose a ratio, Select Crop, drag on the photo, then Apply. Reset restores the full image.")
+        self.crop_help_label.setWordWrap(True)
+        self.crop_help_label.setObjectName("valueLabel")
+        card.body.addWidget(self.crop_help_label)
         self.crop_ratio_combo = QComboBox()
         self.crop_ratio_combo.addItems(["Freeform", "Original", "1:1", "4:3", "16:9"])
         card.body.addWidget(self.crop_ratio_combo)
@@ -527,7 +552,7 @@ class ControlPanel(QWidget):
         self.save_image_button.clicked.connect(self.save_image_requested)
         for s in (self.red_channel_slider, self.green_channel_slider, self.blue_channel_slider):
             s.value_changed.connect(self._emit_rgb)
-        self.reset_rgb_button.clicked.connect(self.reset_rgb_channels)
+        self.reset_rgb_button.clicked.connect(self.reset_color_requested)
         self.saturation_slider.value_changed.connect(self.saturation_changed)
         self.pick_neutral_button.clicked.connect(self.pick_neutral_requested)
         self.reset_neutral_button.clicked.connect(self.reset_neutral_requested)
@@ -711,6 +736,7 @@ class ImageEditorWindow(QMainWindow):
         cp.tone_changed.connect(self.update_tone)
         cp.pick_neutral_requested.connect(self.begin_neutral_picker)
         cp.reset_neutral_requested.connect(self.reset_neutral)
+        cp.reset_color_requested.connect(self.reset_color)
         cp.crop_requested.connect(self.begin_crop)
         cp.crop_apply_requested.connect(self.apply_crop)
         cp.crop_reset_requested.connect(self.reset_crop)
@@ -854,9 +880,8 @@ class ImageEditorWindow(QMainWindow):
                             ("blue", cp.blue_channel_slider), ("saturation", cp.saturation_slider),
                             ("lut_intensity", cp.lut_intensity_slider), ("text_size", cp.font_size_slider),
                             *cp.tone_sliders.items()):
-            widget.blockSignals(True)
-            widget.slider.setValue(state.get(key, self._default_state().get(key, 0)))
-            widget.blockSignals(False)
+            widget.set_value_silently(state.get(key, self._default_state().get(key, 0)))
+        self._sync_rgb_controls()
         cp.add_text_toggle.blockSignals(True)
         cp.add_text_toggle.setChecked(state.get("text_enabled", False))
         cp.add_text_toggle.blockSignals(False)
@@ -1006,7 +1031,11 @@ class ImageEditorWindow(QMainWindow):
             QMessageBox.critical(self, "Export failed", str(exc))
 
     def update_rgb_channels(self, red: int, green: int, blue: int):
-        values = (red, green, blue)
+        displayed = (red, green, blue)
+        gains = self.state.get("neutral_gains", [1, 1, 1])
+        values = tuple(round(((1 + value / 100) / max(0.01, gain) - 1) * 100)
+                       for value, gain in zip(displayed, gains))
+        values = tuple(max(-100, min(100, value)) for value in values)
         if values != tuple(self.state[k] for k in ("red", "green", "blue")):
             self._change()
             self.state.update(zip(("red", "green", "blue"), values))
@@ -1039,11 +1068,42 @@ class ImageEditorWindow(QMainWindow):
             return
         self._history()
         self.state["neutral_gains"] = gains
+        self._sync_rgb_controls()
         self.schedule_preview()
 
     def reset_neutral(self):
+        if all(abs(gain - 1.0) < 1e-6 for gain in self.state["neutral_gains"]):
+            return
         self._history()
         self.state["neutral_gains"] = [1, 1, 1]
+        self._sync_rgb_controls()
+        self.schedule_preview()
+
+    def _sync_rgb_controls(self):
+        """Display the combined manual and sampled RGB correction on the sliders."""
+        gains = self.state.get("neutral_gains", [1, 1, 1])
+        widgets = (self.control_panel.red_channel_slider,
+                   self.control_panel.green_channel_slider,
+                   self.control_panel.blue_channel_slider)
+        for key, widget, gain in zip(("red", "green", "blue"), widgets, gains):
+            combined = (1 + self.state[key] / 100) * gain
+            displayed = max(-100, min(100, round((combined - 1) * 100)))
+            widget.set_value_silently(displayed)
+
+    def reset_color(self):
+        keys = ("red", "green", "blue", "saturation")
+        neutral_active = any(abs(gain - 1.0) >= 1e-6 for gain in self.state["neutral_gains"])
+        if not neutral_active and all(self.state[key] == 0 for key in keys):
+            return
+        self._history()
+        self.state.update({key: 0 for key in keys})
+        self.state["neutral_gains"] = [1, 1, 1]
+        widgets = (self.control_panel.red_channel_slider,
+                   self.control_panel.green_channel_slider,
+                   self.control_panel.blue_channel_slider,
+                   self.control_panel.saturation_slider)
+        for widget in widgets:
+            widget.set_value_silently(0)
         self.schedule_preview()
 
     def begin_crop(self):
@@ -1179,9 +1239,8 @@ class ImageEditorWindow(QMainWindow):
                             ("saturation", self.control_panel.saturation_slider),
                             ("lut_intensity", self.control_panel.lut_intensity_slider),
                             *self.control_panel.tone_sliders.items()):
-            widget.blockSignals(True)
-            widget.slider.setValue(values.get(key, 0))
-            widget.blockSignals(False)
+            widget.set_value_silently(values.get(key, 0))
+        self._sync_rgb_controls()
         self.schedule_preview()
 
     def save_current_preset(self):
