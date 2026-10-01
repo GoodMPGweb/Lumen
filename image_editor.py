@@ -649,8 +649,8 @@ class ImageEditorShell(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Lumen v2")
-        self.resize(1480, 940)
-        self.setMinimumSize(1120, 760)
+        self.resize(1200, 800)
+        self.setMinimumSize(850, 580)
 
         self.slider_rows: dict[str, SliderRow] = {}
         self.source_image: QImage | None = None
@@ -1771,14 +1771,50 @@ def main() -> int:
     app.setStyleSheet(QSS)
     startup_stage("Building main window")
     window = ImageEditorWindow()
+    screen = app.primaryScreen()
+    if screen is not None:
+        available = screen.availableGeometry()
+        window.resize(min(window.width(), available.width()),
+                      min(window.height(), available.height()))
+        window.move(available.center() - window.rect().center())
+        startup_stage(f"Primary screen {available.width()}x{available.height()}, "
+                      f"window {window.width()}x{window.height()} at "
+                      f"{window.x()},{window.y()}")
     startup_stage("Showing main window")
     window.show()
+    window.raise_()
+    window.activateWindow()
     def first_event():
         startup_stage("Qt event loop responding")
         if _STARTUP_LOG is not None:
             faulthandler.cancel_dump_traceback_later()
 
     QTimer.singleShot(0, first_event)
+    def inspect_window():
+        startup_stage(f"Window visible={window.isVisible()} "
+                      f"minimized={window.isMinimized()} "
+                      f"active={window.isActiveWindow()} "
+                      f"geometry={window.geometry().getRect()}")
+        current_screen = window.screen()
+        if current_screen is not None:
+            try:
+                snapshot = current_screen.grabWindow(int(window.winId()))
+                if snapshot.isNull():
+                    startup_stage("Window capture was empty")
+                else:
+                    snapshot_path = Path(tempfile.gettempdir()) / "Lumen-window.png"
+                    snapshot.save(str(snapshot_path), "PNG")
+                    sample = snapshot.toImage().scaled(80, 60)
+                    dark = sum(max(sample.pixelColor(x, y).red(),
+                                   sample.pixelColor(x, y).green(),
+                                   sample.pixelColor(x, y).blue()) < 130
+                               for y in range(sample.height()) for x in range(sample.width()))
+                    startup_stage(f"Window capture {snapshot.width()}x{snapshot.height()}, "
+                                  f"dark pixels {dark / 4800:.0%}; saved Lumen-window.png")
+            except Exception as exc:
+                startup_stage(f"Window capture failed: {type(exc).__name__}: {exc}")
+
+    QTimer.singleShot(2000, inspect_window)
     startup_stage("Starting Qt event loop")
     return app.exec()
 
